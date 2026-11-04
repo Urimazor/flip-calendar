@@ -26,6 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         set { UserDefaults.standard.set(newValue, forKey: scaleKey) }
     }
     private var sizeLabel: NSTextField?
+    private var hoverTimer: Timer?
+    private var lastMouse = NSPoint(x: -1, y: -1)
+    private var hoverIndex: Int? = nil
     private var slider: NSSlider?
 
     func applicationDidFinishLaunching(_ note: Notification) {
@@ -75,6 +78,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(NSMenuItem(title: "Quit Flip Calendar Wallpaper", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
+
+        // Hover: the window ignores the mouse (so desktop icons keep working); instead we follow the pointer
+        // and, while it is over uncovered desktop, tell the page where it is so it can show the date tooltip.
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in self?.trackHover() }
+    }
+
+    private func trackHover() {
+        let mouse = NSEvent.mouseLocation
+        if mouse == lastMouse { return }
+        lastMouse = mouse
+        var target: (Int, NSPoint)? = nil
+        for (i, w) in windows.enumerated() where w.isVisible && NSMouseInRect(mouse, w.frame, false) {
+            if !isCovered(mouse) {
+                target = (i, NSPoint(x: mouse.x - w.frame.minX, y: w.frame.maxY - mouse.y))
+            }
+            break
+        }
+        if let old = hoverIndex, old != target?.0, old < webViews.count {
+            webViews[old].evaluateJavaScript("window.__hover && window.__hover(null)", completionHandler: nil)
+        }
+        hoverIndex = target?.0
+        if let (i, p) = target, i < webViews.count {
+            webViews[i].evaluateJavaScript("window.__hover && window.__hover(\(p.x), \(p.y))", completionHandler: nil)
+        }
+    }
+
+    /// True if any normal window, the Dock or the menu bar is on top of this point.
+    private func isCovered(_ mouse: NSPoint) -> Bool {
+        guard let main = NSScreen.screens.first,
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return false }
+        let pt = CGPoint(x: mouse.x, y: main.frame.maxY - mouse.y)   // Quartz coordinates (top-left origin)
+        let me = ProcessInfo.processInfo.processIdentifier
+        for info in list {
+            if (info[kCGWindowOwnerPID as String] as? Int32) == me { continue }
+            if (info[kCGWindowLayer as String] as? Int ?? 0) < 0 { continue }
+            if (info[kCGWindowAlpha as String] as? Double ?? 1) <= 0.01 { continue }
+            guard let bd = info[kCGWindowBounds as String] as? NSDictionary,
+                  let r = CGRect(dictionaryRepresentation: bd) else { continue }
+            if r.contains(pt) { return true }
+        }
+        return false
     }
 
     @objc private func screensChanged() { buildWindows() }
