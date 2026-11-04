@@ -46,15 +46,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             config.userContentController.addUserScript(WKUserScript(
                 source: "window.__SAVER__ = { wallpaper: true };", injectionTime: .atDocumentStart, forMainFrameOnly: true))
             // App windows cover the desktop, so WebKit would think the page is hidden and freeze it.
-            let prefs = config.preferences
             for sel in ["_setHiddenPageDOMTimerThrottlingEnabled:", "_setHiddenPageDOMTimerThrottlingAutoIncreases:",
                         "_setPageVisibilityBasedProcessSuppressionEnabled:"] {
-                let s = NSSelectorFromString(sel)
-                if prefs.responds(to: s) { prefs.perform(s, with: false as NSNumber) }
+                callBoolSetter(config.preferences, sel, false)
             }
             let wv = WKWebView(frame: NSRect(origin: .zero, size: screen.frame.size), configuration: config)
-            let occ = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
-            if wv.responds(to: occ) { wv.perform(occ, with: false as NSNumber) }
+            callBoolSetter(wv, "_setWindowOcclusionDetectionEnabled:", false)
             wv.autoresizingMask = [.width, .height]
             wv.setValue(false, forKey: "drawsBackground")
             wv.loadHTMLString(html, baseURL: nil)
@@ -64,6 +61,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             windows.append(w)
         }
     }
+}
+
+/// Calls a private `-(void)setX:(BOOL)` method if it exists (no-op otherwise).
+/// (`perform(_:with:)` would pass an object pointer, not a BOOL, so the flag would not reliably be NO.)
+func callBoolSetter(_ obj: NSObject, _ name: String, _ value: Bool) {
+    let sel = NSSelectorFromString(name)
+    guard obj.responds(to: sel), let imp = obj.method(for: sel) else { return }
+    typealias Fn = @convention(c) (AnyObject, Selector, Bool) -> Void
+    unsafeBitCast(imp, to: Fn.self)(obj, sel, value)
 }
 
 let app = NSApplication.shared

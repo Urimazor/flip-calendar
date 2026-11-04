@@ -39,22 +39,21 @@ public final class FlipCalendarView: ScreenSaverView, WKNavigationDelegate {
     private func makeWebView() {
         webView?.removeFromSuperview()
         let config = WKWebViewConfiguration()
+        // The saver's window lives in legacyScreenSaver and AppKit reports it as occluded,
+        // so WebKit suspends the page ~2 s after load and the screen goes black.
+        // Turn off WebKit's visibility-based throttling (private keys, guarded).
+        for setter in ["_setPageVisibilityBasedProcessSuppressionEnabled:",
+                       "_setHiddenPageDOMTimerThrottlingEnabled:",
+                       "_setHiddenPageDOMTimerThrottlingAutoIncreases:"] {
+            Self.callBoolSetter(config.preferences, setter, false)
+        }
         let flag = "window.__SAVER__ = { preview: \(isPreview ? "true" : "false") };"
         config.userContentController.addUserScript(
             WKUserScript(source: flag, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        // The saver window is reported as "occluded", so WebKit would freeze the page after ~2 s.
-        // Turn off hidden-page throttling/suppression (private settings, used only if present).
-        let prefs = config.preferences
-        for sel in ["_setHiddenPageDOMTimerThrottlingEnabled:", "_setHiddenPageDOMTimerThrottlingAutoIncreases:",
-                    "_setPageVisibilityBasedProcessSuppressionEnabled:"] {
-            let s = NSSelectorFromString(sel)
-            if prefs.responds(to: s) { prefs.perform(s, with: false as NSNumber) }
-        }
         let wv = WKWebView(frame: bounds, configuration: config)
-        let occ = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
-        if wv.responds(to: occ) { wv.perform(occ, with: false as NSNumber) }
         wv.autoresizingMask = [.width, .height]
         wv.setValue(false, forKey: "drawsBackground")
+        Self.callBoolSetter(wv, "_setWindowOcclusionDetectionEnabled:", false)
         wv.navigationDelegate = self
         addSubview(wv)
         webView = wv
@@ -63,6 +62,14 @@ public final class FlipCalendarView: ScreenSaverView, WKNavigationDelegate {
             // Fonts are embedded in the HTML, so no file access is needed.
             wv.loadHTMLString(html, baseURL: nil)
         }
+    }
+
+    /// Calls a private `-(void)setX:(BOOL)` method if it exists (no-op otherwise).
+    private static func callBoolSetter(_ obj: NSObject, _ name: String, _ value: Bool) {
+        let sel = Selector(name)
+        guard obj.responds(to: sel), let imp = obj.method(for: sel) else { return }
+        typealias Fn = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(imp, to: Fn.self)(obj, sel, value)
     }
 
     // If macOS kills the web content process, the page goes black: rebuild it.
