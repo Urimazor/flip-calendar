@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flip Calendar – הורדות</title>
+<style>
+  :root { --bg:#000; --card:#141414; --ink:#E8E2E0; --muted:#979391; --red:#E43321;
+          --heb: -apple-system, "SF Hebrew", "Arial Hebrew", "Noto Sans Hebrew", "Segoe UI", Arial, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--heb); line-height:1.6; }
+  main { max-width:880px; margin:0 auto; padding:48px 16px 64px; }
+  h1 { font-size:2rem; margin:0 0 6px; letter-spacing:-.01em; }
+  .lead { color:var(--muted); margin:0 0 32px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; }
+  .card { background:var(--card); border-radius:16px; padding:24px; display:flex; flex-direction:column; gap:14px; }
+  .card h2 { margin:0; font-size:1.25rem; }
+  .card p { margin:0; color:var(--muted); }
+  ol { margin:0; padding-inline-start:1.2em; }
+  li { margin:4px 0; }
+  .btn { display:inline-block; align-self:flex-start; background:var(--red); color:#fff; text-decoration:none;
+         font-weight:600; padding:12px 22px; border-radius:999px; }
+  .btn:hover { filter:brightness(1.1); }
+  .note { margin-top:28px; background:var(--card); border-radius:16px; padding:18px 24px; color:var(--muted); }
+  .note b { color:var(--ink); }
+  a.back { color:var(--muted); }
+  footer { margin-top:28px; font-size:.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Flip Calendar למק</h1>
+  <p class="lead">גרסאות מוכנות להתקנה, בלי לבנות כלום. מתאים למעבדי Apple ו-Intel, ‏macOS 12 ומעלה.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>שומר מסך</h2>
+      <p>השעון והלוח מופיעים כשהמחשב במנוחה.</p>
+      <a class="btn" href="FlipCalendar.saver.zip" download>הורדת שומר המסך</a>
+      <ol>
+        <li>פותחים את קובץ ה-zip שהורד.</li>
+        <li>לוחצים פעמיים על FlipCalendar.saver ובוחרים Install.</li>
+        <li>בוחרים אותו ב-System Settings &gt; Screen Saver.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>רקע חי לשולחן העבודה</h2>
+      <p>השעון והלוח מאחורי האייקונים, כל הזמן.</p>
+      <a class="btn" href="FlipCalendarWallpaper.zip" download>הורדת הרקע החי</a>
+      <ol>
+        <li>פותחים את ה-zip ומעבירים את האפליקציה לתיקיית Applications.</li>
+        <li>בפעם הראשונה: קליק ימני על האפליקציה &gt; Open. יוצאים דרך האייקון ◷ בשורת התפריטים.</li>
+        <li>כדי שתעלה אוטומטית: System Settings &gt; General &gt; Login Items &gt; +.</li>
+      </ol>
+    </section>
+  </div>
+
+  <p class="note"><b>למה צריך אישור בפתיחה הראשונה?</b> הקבצים לא מגיעים מה-App Store, ולכן macOS מבקש אישור פעם אחת:
+    קליק ימני &gt; Open, או System Settings &gt; Privacy &amp; Security &gt; Open Anyway.</p>
+
+  <footer><a class="back" href="/">חזרה ל-Flip Calendar</a></footer>
+</main>
+</body>
+</html>
