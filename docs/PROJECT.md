@@ -14,6 +14,8 @@
 | שיחת הפרויקט ב-Claude | https://claude.ai/code/project/chan_01VgeE2gFpp4P3NBtqaEgDpD |
 
 ## מבנה התיקייה ב-Dropbox
+מיקום: `Dropbox/Uri Mazor/Ai/Claude/Projects/כללי/Flip Calendar`
+
 - `repo/` — עותק git של הקוד (מתעדכן ב-`git pull`)
 - `builds/` — הקבצים המוכנים להתקנה (FlipCalendar.saver, Flip Calendar Wallpaper.app וה-ZIP-ים)
 - `source-files/` — קבצי המקור המקוריים (Fliqlo.saver, Calendar_2027_450mm_v3.pdf) אם נשמרו
@@ -61,3 +63,4 @@
 - 2026-11-04 — הפעלה/כיבוי לפי שולחן עבודה.
 - 2026-11-04 — ריחוף על תאריך בטפט מציג תאריך עברי וחג.
 - 2026-11-04 — תיעוד וגיבוי ב-Dropbox.
+- 2026-11-04 — התיקייה הועברה ל-Projects/כללי.
