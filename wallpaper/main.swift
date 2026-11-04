@@ -117,6 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if (info[kCGWindowAlpha as String] as? Double ?? 1) <= 0.01 { continue }
             guard let bd = info[kCGWindowBounds as String] as? NSDictionary,
                   let r = CGRect(dictionaryRepresentation: bd) else { continue }
+            // The Dock keeps an invisible full-screen window (layer 20) for Mission Control; it covers nothing.
+            if (info[kCGWindowOwnerName as String] as? String) == "Dock",
+               NSScreen.screens.contains(where: { $0.frame.size == r.size }) { continue }
             if r.contains(pt) { return true }
         }
         return false
