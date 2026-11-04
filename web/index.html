@@ -142,6 +142,7 @@ const S = {
   hol: load("hol", true),
   fixedYear: Q.get("year") ? parseInt(Q.get("year"), 10) : null,
   year: null,
+  scale: parseFloat(Q.get("scale")) || (window.__SAVER__ && window.__SAVER__.scale) || 1,
 };
 if (SAVER) document.body.classList.add("saver");
 
@@ -310,7 +311,9 @@ function schedule() { const ms = 1000 - (Date.now() % 1000) + 5; setTimeout(() =
 /* ---------------- layout / scaling ---------------- */
 const stage = document.getElementById("stage");
 function layout() {
-  const W = innerWidth, H = innerHeight, sc = Math.min(W / 1920, H / 1080);
+  const f = Math.max(0.3, Math.min(1, S.scale || 1));
+  const W = innerWidth * f, H = innerHeight * f, sc = Math.min(W / 1920, H / 1080);
+  stage.style.left = (innerWidth - W) / 2 + "px"; stage.style.top = (innerHeight - H) / 2 + "px";
   stage.style.width = W / sc + "px"; stage.style.height = H / sc + "px"; stage.style.transform = `scale(${sc})`;
   const sw = W / sc, sh = H / sc;
   document.body.className = document.body.className.replace(/\bm-\w+/g, "").trim() + " m-" + S.mode;
@@ -355,6 +358,8 @@ function fitInfo() {
 }
 
 /* ---------------- interaction ---------------- */
+// overall size of the composition (0.3–1); the margin around it stays black
+window.__setScale = v => { S.scale = +v || 1; layout(); };
 function setMode(m) { S.mode = m; save("mode", m); layout(); }
 function changeYear(delta) { S.autoYear = false; S.year += delta; buildCalendar(S.year); layout(); }
 addEventListener("keydown", e => {
