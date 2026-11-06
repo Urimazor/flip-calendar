@@ -3,8 +3,10 @@ import WebKit
 
 /// Flip Calendar as a live desktop wallpaper: one borderless window per screen, at desktop level,
 /// behind the icons and all apps, ignoring the mouse. A menu-bar icon lets you quit.
-/// Sticky notes: the page reports where its clickable things are (the + and the notes); while the pointer is over
-/// one of them on uncovered desktop, the window takes clicks, otherwise everything goes through to the desktop.
+/// Sticky notes live in a second, transparent window per screen, just above Finder's desktop-icon layer (Finder keeps a
+/// full-screen window there that would otherwise swallow every click). That page shows only the + and the notes and
+/// reports where they are; while the pointer is over one of them the overlay takes clicks, otherwise everything goes
+/// through to the desktop.
 final class DeskWindow: NSWindow {
     override var canBecomeKey: Bool { true }     // so a note can be typed into
     override var canBecomeMain: Bool { false }
@@ -40,7 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, WKScri
     private var lastMouse = NSPoint(x: -1, y: -1)
     private var hoverIndex: Int? = nil
     private var slider: NSSlider?
-    private var hotRects: [[CGRect]] = []           // clickable areas per window (page coordinates, top-left origin)
+    private var hotRects: [[CGRect]] = []           // clickable areas per overlay (page coordinates, top-left origin)
+    private var overlays: [NSWindow] = []
+    private var overlayViews: [WKWebView] = []
+    private var lastHot: Int? = nil
 
     func applicationDidFinishLaunching(_ note: Notification) {
         if let url = Bundle.main.url(forResource: "index", withExtension: "html"),
@@ -107,20 +112,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, WKScri
             }
             break
         }
-        // take clicks only over a note or the + (and keep them for the rest of a drag that started there)
-        for (i, w) in windows.enumerated() {
+        // the overlay takes clicks only over a note or the + (and keeps them for the rest of a drag that started there)
+        var hotIndex: Int? = nil
+        for (i, w) in overlays.enumerated() {
             var hot = false
             if let (ti, p) = target, ti == i, i < hotRects.count {
                 hot = hotRects[i].contains { $0.insetBy(dx: -2, dy: -2).contains(p) }
             }
             if dragging && !w.ignoresMouseEvents { hot = true }
             if w.ignoresMouseEvents == hot { w.ignoresMouseEvents = !hot }
+            if hot { hotIndex = i }
         }
-        if let old = hoverIndex, old != target?.0, old < webViews.count {
+        // notes/+ hover goes to the overlay; the date tooltip to the calendar underneath (not while over a note)
+        if let old = lastHot, old != hotIndex, old < overlayViews.count {
+            overlayViews[old].evaluateJavaScript("window.__hover && window.__hover(null)", completionHandler: nil)
+        }
+        lastHot = hotIndex
+        if let i = hotIndex, let (_, p) = target, i < overlayViews.count {
+            overlayViews[i].evaluateJavaScript("window.__hover && window.__hover(\(p.x), \(p.y))", completionHandler: nil)
+        }
+        let calTarget = hotIndex == nil ? target : nil
+        if let old = hoverIndex, old != calTarget?.0, old < webViews.count {
             webViews[old].evaluateJavaScript("window.__hover && window.__hover(null)", completionHandler: nil)
         }
-        hoverIndex = target?.0
-        if let (i, p) = target, i < webViews.count {
+        hoverIndex = calTarget?.0
+        if let (i, p) = calTarget, i < webViews.count {
             webViews[i].evaluateJavaScript("window.__hover && window.__hover(\(p.x), \(p.y))", completionHandler: nil)
         }
     }
@@ -152,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, WKScri
 
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let type = body["type"] as? String,
-              let wv = message.webView, let i = webViews.firstIndex(where: { $0 === wv }) else { return }
+              let wv = message.webView, let i = overlayViews.firstIndex(where: { $0 === wv }) else { return }
         switch type {
         case "rects":
             let rs = (body["rects"] as? [[Double]] ?? []).compactMap { a -> CGRect? in
@@ -166,12 +182,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, WKScri
             }
         case "focus":
             NSApp.activate(ignoringOtherApps: true)
-            windows[i].makeKey()
-            windows[i].makeFirstResponder(webViews[i])
+            overlays[i].makeKey()
+            overlays[i].makeFirstResponder(overlayViews[i])
         default: break
         }
     }
 
+    fileprivate var scaleValue: Double { scale }
+    fileprivate var pageHTML: String { html }
+    fileprivate func notesJSONFor(_ d: String) -> String { notesJSON(d) }
     private func notesKey(_ display: String) -> String { "notes-" + (display.isEmpty ? "main" : display) }
 
     /// Saved notes for a display as a JSON array literal (validated, so it is safe to put into the page).
@@ -229,6 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, WKScri
                 if let cur = Spaces.current(forDisplay: windowScreens[i]) { visible = enabledDesktops.contains(cur.key) }
             }
             if visible { w.orderBack(nil) } else { w.orderOut(nil) }
+            if i < overlays.count { if visible { overlays[i].orderFrontRegardless() } else { overlays[i].orderOut(nil) } }
         }
     }
 
@@ -238,20 +258,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, WKScri
     private func applyScale(_ v: Double) {
         scale = v
         updateLabel()
-        for wv in webViews { wv.evaluateJavaScript("window.__setScale && window.__setScale(\(v))", completionHandler: nil) }
+        for wv in webViews + overlayViews { wv.evaluateJavaScript("window.__setScale && window.__setScale(\(v))", completionHandler: nil) }
     }
 
     private func updateLabel() { sizeLabel?.stringValue = "Size: \(Int((scale * 100).rounded()))%" }
 
     private func buildWindows() {
         windows.forEach { $0.orderOut(nil) }
+        overlays.forEach { $0.orderOut(nil) }
         windows.removeAll()
+        overlays.removeAll()
+        overlayViews.removeAll()
+        lastHot = nil
         webViews.removeAll()
         windowScreens.removeAll()
         hotRects.removeAll()
         for screen in NSScreen.screens {
             let display = displayUUID(screen) ?? ""
-            let w = DeskWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
+            let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
             w.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
             w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
             w.ignoresMouseEvents = true
@@ -262,15 +286,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, WKScri
 
             let config = WKWebViewConfiguration()
             config.userContentController.addUserScript(WKUserScript(
-                source: "window.__SAVER__ = { wallpaper: true, scale: \(scale), notes: \(notesJSON(display)) };",
+                source: "window.__SAVER__ = { wallpaper: true, scale: \(scale) };",
                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
-            config.userContentController.add(self, name: "flip")
             // App windows cover the desktop, so WebKit would think the page is hidden and freeze it.
             for sel in ["_setHiddenPageDOMTimerThrottlingEnabled:", "_setHiddenPageDOMTimerThrottlingAutoIncreases:",
                         "_setPageVisibilityBasedProcessSuppressionEnabled:"] {
                 callBoolSetter(config.preferences, sel, false)
             }
-            let wv = DeskWebView(frame: NSRect(origin: .zero, size: screen.frame.size), configuration: config)
+            let wv = WKWebView(frame: NSRect(origin: .zero, size: screen.frame.size), configuration: config)
             callBoolSetter(wv, "_setWindowOcclusionDetectionEnabled:", false)
             wv.autoresizingMask = [.width, .height]
             wv.setValue(false, forKey: "drawsBackground")
@@ -282,8 +305,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, WKScri
             windows.append(w)
             windowScreens.append(display)
             hotRects.append([])
+            addOverlay(screen: screen, display: display)
         }
         applyVisibility()
+    }
+}
+
+extension AppDelegate {
+    /// Transparent window above Finder's desktop icons (below every app) that holds the + and the sticky notes.
+    fileprivate func addOverlay(screen: NSScreen, display: String) {
+        let o = DeskWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
+        o.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
+        o.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+        o.ignoresMouseEvents = true
+        o.backgroundColor = .clear
+        o.isOpaque = false
+        o.hasShadow = false
+        o.isReleasedWhenClosed = false
+        let config = WKWebViewConfiguration()
+        config.userContentController.addUserScript(WKUserScript(
+            source: "window.__SAVER__ = { wallpaper: true, overlay: true, scale: \(scaleValue), notes: \(notesJSONFor(display)) };",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        config.userContentController.add(self, name: "flip")
+        for sel in ["_setHiddenPageDOMTimerThrottlingEnabled:", "_setHiddenPageDOMTimerThrottlingAutoIncreases:",
+                    "_setPageVisibilityBasedProcessSuppressionEnabled:"] {
+            callBoolSetter(config.preferences, sel, false)
+        }
+        let wv = DeskWebView(frame: NSRect(origin: .zero, size: screen.frame.size), configuration: config)
+        callBoolSetter(wv, "_setWindowOcclusionDetectionEnabled:", false)
+        wv.autoresizingMask = [.width, .height]
+        wv.setValue(false, forKey: "drawsBackground")
+        wv.loadHTMLString(pageHTML, baseURL: nil)
+        o.contentView = wv
+        o.setFrame(screen.frame, display: true)
+        o.orderFrontRegardless()
+        overlays.append(o)
+        overlayViews.append(wv)
     }
 }
 

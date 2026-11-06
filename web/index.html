@@ -112,6 +112,11 @@ body.saver #help,body.saver:not(.wall) #tip{display:none}
 #noteAdd::after{width:calc(var(--fs)*.085);height:100%;transform:translate(-50%,-50%)}
 #noteAdd:hover,#noteAdd.hov{color:var(--ink)}
 #notes{position:fixed;inset:0;pointer-events:none;z-index:30}
+/* the wallpaper's note layer: an invisible copy of the layout, showing only the + and the notes */
+html.overlay,html.overlay body{background:transparent}
+html.overlay #stage{visibility:hidden}
+html.overlay #noteAdd{visibility:visible}
+html.overlay #tip,html.overlay #help{display:none}
 .note{position:absolute;width:200px;height:200px;pointer-events:auto;cursor:grab;
   background:linear-gradient(180deg,#FFF59A 0%,#FFF07A 100%);
   box-shadow:0 1px 1px rgba(0,0,0,.18),0 12px 22px -10px rgba(0,0,0,.75);border-radius:1px}
@@ -449,7 +454,9 @@ calEl.addEventListener("mouseleave", () => tip.style.opacity = 0);
 /* ---------------- sticky notes (live wallpaper only) ---------------- */
 // The wallpaper window normally lets every click through to the desktop. The page tells the app where the
 // clickable things are (the + and the notes); the app turns on clicks only while the pointer is over one of them.
-const NOTES_ON = !!(window.__SAVER__ && window.__SAVER__.wallpaper) || Q.has("notes");
+const OVERLAY = !!(window.__SAVER__ && window.__SAVER__.overlay);
+if (OVERLAY) document.documentElement.classList.add("overlay");
+const NOTES_ON = OVERLAY || (!window.__SAVER__ && Q.has("notes"));
 const native = m => { try { window.webkit.messageHandlers.flip.postMessage(m); } catch (e) {} };
 const notesEl = document.getElementById("notes");
 let notes = [];
