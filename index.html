@@ -103,6 +103,26 @@ body.m-cal #header{align-items:flex-start}
 body.pointer #help{opacity:1}
 body.saver #help,body.saver:not(.wall) #tip{display:none}
 .d.hov span{outline:2px solid var(--ink);outline-offset:.06em;border-radius:.1em}
+
+/* ---------- sticky notes (live wallpaper only) ---------- */
+.corner{display:flex;align-items:flex-end;justify-content:center;padding-bottom:calc(var(--fs)*.38)}
+#noteAdd{position:relative;width:calc(var(--fs)*.78);height:calc(var(--fs)*.78);cursor:pointer;color:rgba(232,226,224,.55);transition:color .2s}
+#noteAdd::before,#noteAdd::after{content:"";position:absolute;left:50%;top:50%;background:currentColor;border-radius:1px}
+#noteAdd::before{width:100%;height:calc(var(--fs)*.085);transform:translate(-50%,-50%)}
+#noteAdd::after{width:calc(var(--fs)*.085);height:100%;transform:translate(-50%,-50%)}
+#noteAdd:hover,#noteAdd.hov{color:var(--ink)}
+#notes{position:fixed;inset:0;pointer-events:none;z-index:30}
+.note{position:absolute;width:200px;height:200px;pointer-events:auto;cursor:grab;
+  background:linear-gradient(180deg,#FFF59A 0%,#FFF07A 100%);
+  box-shadow:0 1px 1px rgba(0,0,0,.18),0 12px 22px -10px rgba(0,0,0,.75);border-radius:1px}
+.note.drag{cursor:grabbing;box-shadow:0 2px 3px rgba(0,0,0,.2),0 22px 34px -12px rgba(0,0,0,.8)}
+.note textarea{position:absolute;inset:22px 16px 16px;width:auto;height:auto;resize:none;border:0;outline:0;background:transparent;
+  font-family:var(--heb);font-size:19px;line-height:1.32;color:#2A2723;pointer-events:none;cursor:inherit;overflow:hidden}
+.note.editing textarea{pointer-events:auto;cursor:text}
+.note .nx{position:absolute;left:6px;top:5px;width:18px;height:18px;border:0;padding:0;border-radius:50%;background:transparent;
+  color:rgba(42,39,35,.55);font:400 17px/18px -apple-system,Arial,sans-serif;cursor:pointer;opacity:0;transition:opacity .15s}
+.note:hover .nx,.note.hov .nx{opacity:1}
+.note .nx:hover{background:rgba(42,39,35,.12);color:#2A2723}
 </style>
 </head>
 <body class="m-both">
@@ -124,6 +144,7 @@ body.saver #help,body.saver:not(.wall) #tip{display:none}
   </div>
   <div id="calWrap"><div id="cal"></div></div>
 </div>
+<div id="notes"></div>
 <div id="tip"></div>
 <div id="help"><kbd>1 2 3</kbd> תצוגה · <kbd>T</kbd> 12/24 · <kbd>S</kbd> שניות · <kbd>← →</kbd> שנה · <kbd>Home</kbd> היום · <kbd>D</kbd> כיוון · <kbd>H</kbd> חגים · <kbd>F</kbd> מסך מלא</div>
 
@@ -234,7 +255,8 @@ function buildCalendar(year) {
   calEl.innerHTML = ""; dayCells = {}; hdrCells = []; monthLabels = [];
   const frag = document.createDocumentFragment();
   // header row: corner + 37 weekday letters starting on Sunday (as in the poster)
-  const corner = document.createElement("div"); corner.style.gridRow = 1; corner.style.gridColumn = 1; frag.appendChild(corner);
+  const corner = document.createElement("div"); corner.className = "corner"; corner.style.gridRow = 1; corner.style.gridColumn = 1; frag.appendChild(corner);
+  attachNoteAdd(corner);
   const L = "SMTWTFS";
   for (let i = 0; i < 37; i++) {
     const w = document.createElement("div"); w.className = "wd" + (i % 7 === 0 ? " sun" : "");
@@ -340,6 +362,7 @@ function layout() {
     calEl.style.setProperty("--label", colW * 1.6 + "px");
     fitInfo();
     markToday(true);
+    reportRects();
   });
 }
 
@@ -386,6 +409,7 @@ window.__setScale = v => { S.scale = +v || 1; layout(); };
 function setMode(m) { S.mode = m; save("mode", m); layout(); }
 function changeYear(delta) { S.autoYear = false; S.year += delta; buildCalendar(S.year); layout(); }
 addEventListener("keydown", e => {
+  if (e.target && e.target.closest && e.target.closest(".note")) return;
   const k = e.key.toLowerCase();
   if (k === "1") setMode("both"); else if (k === "2") setMode("clock"); else if (k === "3") setMode("cal");
   else if (k === "t") { S.h24 = !S.h24; save("h24", S.h24); cards.forEach(c => c._.val = null); tick(false); }
@@ -411,7 +435,10 @@ calEl.addEventListener("mouseover", e => { showTip(SAVER ? null : e.target.close
 // wallpaper: the app passes the mouse position (page px) while the pointer is over the uncovered desktop
 let hoverEl = null;
 window.__hover = (x, y) => {
-  const el = x == null ? null : (document.elementFromPoint(x, y) || {closest: () => null}).closest(".d");
+  const hit = x == null ? null : document.elementFromPoint(x, y);
+  document.querySelectorAll(".note.hov,#noteAdd.hov").forEach(e => e.classList.remove("hov"));
+  const nh = hit && hit.closest(".note,#noteAdd"); if (nh) nh.classList.add("hov");
+  const el = hit && !nh ? hit.closest(".d") : null;
   if (el === hoverEl) return; hoverEl = el;
   document.querySelectorAll(".d.hov").forEach(e => e.classList.remove("hov"));
   if (el) el.classList.add("hov");
@@ -419,9 +446,79 @@ window.__hover = (x, y) => {
 };
 calEl.addEventListener("mouseleave", () => tip.style.opacity = 0);
 
+/* ---------------- sticky notes (live wallpaper only) ---------------- */
+// The wallpaper window normally lets every click through to the desktop. The page tells the app where the
+// clickable things are (the + and the notes); the app turns on clicks only while the pointer is over one of them.
+const NOTES_ON = !!(window.__SAVER__ && window.__SAVER__.wallpaper) || Q.has("notes");
+const native = m => { try { window.webkit.messageHandlers.flip.postMessage(m); } catch (e) {} };
+const notesEl = document.getElementById("notes");
+let notes = [];
+if (NOTES_ON) {
+  try { notes = (window.__SAVER__ && Array.isArray(window.__SAVER__.notes)) ? window.__SAVER__.notes : load("notes", []); } catch (e) { notes = []; }
+  if (!Array.isArray(notes)) notes = [];
+}
+const addBtn = document.createElement("div"); addBtn.id = "noteAdd";
+function attachNoteAdd(corner) { if (NOTES_ON) corner.appendChild(addBtn); }
+let persistT;
+function persist() {
+  clearTimeout(persistT);
+  persistT = setTimeout(() => { const j = JSON.stringify(notes); native({type: "notes", json: j}); if (!window.__SAVER__) save("notes", notes); }, 250);
+}
+function reportRects() {
+  if (!NOTES_ON) return;
+  const els = [addBtn, ...notesEl.children].filter(e => e.isConnected && e.offsetWidth);
+  native({type: "rects", rects: els.map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })});
+}
+const clampX = x => Math.max(0, Math.min(innerWidth - 200, x)), clampY = y => Math.max(0, Math.min(innerHeight - 200, y));
+function renderNote(n) {
+  const el = document.createElement("div"); el.className = "note";
+  el.style.left = (n.x = clampX(n.x)) + "px"; el.style.top = (n.y = clampY(n.y)) + "px";
+  const ta = document.createElement("textarea"); ta.dir = "auto"; ta.spellcheck = false; ta.value = n.text || "";
+  const x = document.createElement("button"); x.className = "nx"; x.textContent = "×"; x.tabIndex = -1;
+  el.append(ta, x); notesEl.appendChild(el);
+  x.addEventListener("mousedown", e => e.stopPropagation());
+  x.addEventListener("click", e => {
+    e.stopPropagation(); notes = notes.filter(o => o !== n); el.remove(); persist(); reportRects();
+  });
+  ta.addEventListener("input", () => { n.text = ta.value; persist(); });
+  ta.addEventListener("blur", () => { el.classList.remove("editing"); n.text = ta.value; persist(); });
+  ta.addEventListener("keydown", e => { if (e.key === "Escape") ta.blur(); });
+  // drag anywhere on the note (while typing: drag from its margin); a click without moving starts typing
+  el.addEventListener("mousedown", e => {
+    if (e.button !== 0 || (el.classList.contains("editing") && e.target === ta)) return;
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, ox = n.x, oy = n.y; let moved = false;
+    notesEl.appendChild(el); // bring to front
+    const mv = ev => {
+      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+      moved = true; el.classList.add("drag");
+      n.x = clampX(ox + ev.clientX - sx); n.y = clampY(oy + ev.clientY - sy);
+      el.style.left = n.x + "px"; el.style.top = n.y + "px"; reportRects();
+    };
+    const up = () => {
+      removeEventListener("mousemove", mv); removeEventListener("mouseup", up); el.classList.remove("drag");
+      if (moved) { notes = notes.filter(o => o !== n).concat(n); persist(); reportRects(); } else editNote(el);
+    };
+    addEventListener("mousemove", mv); addEventListener("mouseup", up);
+  });
+  return el;
+}
+function editNote(el) {
+  const ta = el.querySelector("textarea"); el.classList.add("editing");
+  native({type: "focus"});
+  setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 30);
+}
+addBtn.addEventListener("mousedown", e => e.preventDefault());
+addBtn.addEventListener("click", () => {
+  const r = addBtn.getBoundingClientRect(), k = notes.length % 6;
+  const n = {x: r.left - 230 - k * 26, y: r.bottom + 14 + k * 26, text: ""};
+  notes.push(n); const el = renderNote(n); persist(); reportRects(); editNote(el);
+});
+if (NOTES_ON) { notes.forEach(renderNote); setInterval(reportRects, 2000); addEventListener("resize", () => setTimeout(reportRects, 50)); }
+
 // gentle drift against burn-in (moves a few px every minute)
 let driftN = 0;
-setInterval(() => { driftN++; const a = driftN * 2.399; stage.style.translate = `${Math.round(Math.cos(a) * 6)}px ${Math.round(Math.sin(a) * 6)}px`; }, 60000);
+setInterval(() => { driftN++; const a = driftN * 2.399; stage.style.translate = `${Math.round(Math.cos(a) * 6)}px ${Math.round(Math.sin(a) * 6)}px`; setTimeout(reportRects, 4200); }, 60000);
 
 /* ---------------- go ---------------- */
 S.year = S.fixedYear || new Date().getFullYear();

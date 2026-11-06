@@ -3,7 +3,17 @@ import WebKit
 
 /// Flip Calendar as a live desktop wallpaper: one borderless window per screen, at desktop level,
 /// behind the icons and all apps, ignoring the mouse. A menu-bar icon lets you quit.
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+/// Sticky notes: the page reports where its clickable things are (the + and the notes); while the pointer is over
+/// one of them on uncovered desktop, the window takes clicks, otherwise everything goes through to the desktop.
+final class DeskWindow: NSWindow {
+    override var canBecomeKey: Bool { true }     // so a note can be typed into
+    override var canBecomeMain: Bool { false }
+}
+final class DeskWebView: WKWebView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }   // first click acts, even when inactive
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, WKScriptMessageHandler {
     private var windows: [NSWindow] = []
     private var windowScreens: [String] = []          // display UUID for each window
     private var thisDesktopItem: NSMenuItem?
@@ -30,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastMouse = NSPoint(x: -1, y: -1)
     private var hoverIndex: Int? = nil
     private var slider: NSSlider?
+    private var hotRects: [[CGRect]] = []           // clickable areas per window (page coordinates, top-left origin)
 
     func applicationDidFinishLaunching(_ note: Notification) {
         if let url = Bundle.main.url(forResource: "index", withExtension: "html"),
@@ -81,12 +92,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Hover: the window ignores the mouse (so desktop icons keep working); instead we follow the pointer
         // and, while it is over uncovered desktop, tell the page where it is so it can show the date tooltip.
-        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in self?.trackHover() }
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.trackHover() }
     }
 
     private func trackHover() {
         let mouse = NSEvent.mouseLocation
-        if mouse == lastMouse { return }
+        let dragging = NSEvent.pressedMouseButtons != 0
+        if mouse == lastMouse && !dragging { return }
         lastMouse = mouse
         var target: (Int, NSPoint)? = nil
         for (i, w) in windows.enumerated() where w.isVisible && NSMouseInRect(mouse, w.frame, false) {
@@ -94,6 +106,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 target = (i, NSPoint(x: mouse.x - w.frame.minX, y: w.frame.maxY - mouse.y))
             }
             break
+        }
+        // take clicks only over a note or the + (and keep them for the rest of a drag that started there)
+        for (i, w) in windows.enumerated() {
+            var hot = false
+            if let (ti, p) = target, ti == i, i < hotRects.count {
+                hot = hotRects[i].contains { $0.insetBy(dx: -2, dy: -2).contains(p) }
+            }
+            if dragging && !w.ignoresMouseEvents { hot = true }
+            if w.ignoresMouseEvents == hot { w.ignoresMouseEvents = !hot }
         }
         if let old = hoverIndex, old != target?.0, old < webViews.count {
             webViews[old].evaluateJavaScript("window.__hover && window.__hover(null)", completionHandler: nil)
@@ -126,6 +147,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func screensChanged() { buildWindows() }
+
+    // MARK: messages from the page (sticky notes)
+
+    func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], let type = body["type"] as? String,
+              let wv = message.webView, let i = webViews.firstIndex(where: { $0 === wv }) else { return }
+        switch type {
+        case "rects":
+            let rs = (body["rects"] as? [[Double]] ?? []).compactMap { a -> CGRect? in
+                a.count == 4 ? CGRect(x: a[0], y: a[1], width: a[2], height: a[3]) : nil }
+            while hotRects.count <= i { hotRects.append([]) }
+            hotRects[i] = rs
+            lastMouse = NSPoint(x: -1, y: -1)        // re-check the pointer now
+        case "notes":
+            if let j = body["json"] as? String, i < windowScreens.count {
+                UserDefaults.standard.set(j, forKey: notesKey(windowScreens[i]))
+            }
+        case "focus":
+            NSApp.activate(ignoringOtherApps: true)
+            windows[i].makeKey()
+            windows[i].makeFirstResponder(webViews[i])
+        default: break
+        }
+    }
+
+    private func notesKey(_ display: String) -> String { "notes-" + (display.isEmpty ? "main" : display) }
+
+    /// Saved notes for a display as a JSON array literal (validated, so it is safe to put into the page).
+    private func notesJSON(_ display: String) -> String {
+        guard let j = UserDefaults.standard.string(forKey: notesKey(display)), let d = j.data(using: .utf8),
+              (try? JSONSerialization.jsonObject(with: d)) is [Any] else { return "[]" }
+        return j
+    }
 
     // MARK: desktops (Spaces)
 
@@ -194,8 +248,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         windows.removeAll()
         webViews.removeAll()
         windowScreens.removeAll()
+        hotRects.removeAll()
         for screen in NSScreen.screens {
-            let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
+            let display = displayUUID(screen) ?? ""
+            let w = DeskWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
             w.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
             w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
             w.ignoresMouseEvents = true
@@ -206,13 +262,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
             let config = WKWebViewConfiguration()
             config.userContentController.addUserScript(WKUserScript(
-                source: "window.__SAVER__ = { wallpaper: true, scale: \(scale) };", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+                source: "window.__SAVER__ = { wallpaper: true, scale: \(scale), notes: \(notesJSON(display)) };",
+                injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            config.userContentController.add(self, name: "flip")
             // App windows cover the desktop, so WebKit would think the page is hidden and freeze it.
             for sel in ["_setHiddenPageDOMTimerThrottlingEnabled:", "_setHiddenPageDOMTimerThrottlingAutoIncreases:",
                         "_setPageVisibilityBasedProcessSuppressionEnabled:"] {
                 callBoolSetter(config.preferences, sel, false)
             }
-            let wv = WKWebView(frame: NSRect(origin: .zero, size: screen.frame.size), configuration: config)
+            let wv = DeskWebView(frame: NSRect(origin: .zero, size: screen.frame.size), configuration: config)
             callBoolSetter(wv, "_setWindowOcclusionDetectionEnabled:", false)
             wv.autoresizingMask = [.width, .height]
             wv.setValue(false, forKey: "drawsBackground")
@@ -222,7 +280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             w.setFrame(screen.frame, display: true)
             w.orderBack(nil)
             windows.append(w)
-            windowScreens.append(displayUUID(screen) ?? "")
+            windowScreens.append(display)
+            hotRects.append([])
         }
         applyVisibility()
     }
