@@ -359,6 +359,25 @@ function fitInfo() {
   let pfs = gfs * 0.46; pr.style.fontSize = pfs + "px";
   pr.style.marginTop = gfs * 0.15 + "px"; // optical: same visible gap as between the date and the Hebrew date
   const room = W - 50; if (pt.offsetWidth > room) pr.style.fontSize = pfs * room / pt.offsetWidth + "px";
+  alignYearTop();
+}
+
+// push the info block down so the top of the year's digits lines up with the top of the clock's digits
+function inkTop(el, text, k) { // top of the glyphs (not the line box), in stage px
+  const cs = getComputedStyle(el), ctx = inkTop.ctx || (inkTop.ctx = document.createElement("canvas").getContext("2d"));
+  ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const m = ctx.measureText(text), lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize);
+  const r = el.getBoundingClientRect(), boxH = r.height / k;
+  const lineTop = r.top / k + (boxH - lh) / 2; // single line, vertically centred in its box
+  return lineTop + (lh - m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2 + m.fontBoundingBoxAscent - m.actualBoundingBoxAscent;
+}
+function alignYearTop() {
+  const info = document.getElementById("info"), yr = document.getElementById("year"), dig = clockEl.querySelector(".card:not(.sec) .half.top span");
+  info.style.paddingTop = "";
+  if (S.mode !== "both" || !dig || !yr.textContent) return;
+  const k = stage.getBoundingClientRect().width / stage.offsetWidth || 1;
+  const d = inkTop(dig, "0123456789", k) - inkTop(yr, yr.textContent, k);
+  info.style.paddingTop = Math.max(0, parseFloat(getComputedStyle(info).paddingTop) + d) + "px";
 }
 
 /* ---------------- interaction ---------------- */
