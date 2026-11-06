@@ -14,7 +14,7 @@
   --rule:rgba(232,226,224,.42);
   --muted:#979391;
   --card:#141414;
-  --card-ink:#8C8887;
+  --card-ink:var(--ink); /* clock digits: same white as the year */
   --heb: -apple-system, "SF Hebrew", "Arial Hebrew", "Noto Sans Hebrew", "Segoe UI", Arial, sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -27,12 +27,13 @@ body.pointer{cursor:default}
 /* ---------- header ---------- */
 #header{display:flex;align-items:stretch;justify-content:space-between;gap:48px;flex:0 0 auto}
 #info{direction:rtl;text-align:right;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:6px 0 2px}
-#dateBlock{margin-top:30px;display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+#dateBlock{margin-top:30px;display:flex;flex-direction:column;align-items:flex-start;align-self:stretch;gap:10px}
 #year{font-weight:700;font-size:150px;line-height:.74;letter-spacing:-.075em;color:var(--ink);margin-left:-.06em;direction:ltr;font-feature-settings:"ss01" 0}
 #greg{font-family:var(--heb);font-size:40px;white-space:nowrap;font-weight:700;letter-spacing:-.01em;line-height:1.05}
 #hebrew{font-family:var(--heb);font-size:26px;white-space:nowrap;font-weight:500;color:var(--muted)}
-#holiday{font-family:var(--heb);font-size:22px;white-space:nowrap;font-weight:600;color:var(--red);min-height:1em}
-#progress{margin-top:24px;display:flex;align-items:center;gap:.6em;align-self:stretch;white-space:nowrap;font-family:var(--heb);font-size:18px;line-height:1;color:var(--muted);direction:rtl}
+#holiday{font-family:var(--heb);font-size:22px;white-space:nowrap;font-weight:600;color:var(--red)}
+#holiday:empty{display:none}
+#progress{display:flex;align-items:center;gap:.6em;align-self:stretch;white-space:nowrap;font-family:var(--heb);font-size:18px;line-height:1;color:var(--muted);direction:rtl}
 #bar{flex:1 1 auto;min-width:30px;height:.74em;background:rgba(232,226,224,.30);position:relative;direction:ltr}
 #bar i{position:absolute;inset:0 auto 0 0;background:var(--ink)}
 html[dir-cal="rtl"] #bar i{inset:0 0 0 auto}
@@ -116,9 +117,9 @@ body.saver #help,body.saver:not(.wall) #tip{display:none}
       <div id="dateBlock">
         <div id="greg"></div>
         <div id="hebrew"></div>
+        <div id="progress"><span id="progTxt"></span><div id="bar"><i></i></div></div>
         <div id="holiday"></div>
       </div>
-      <div id="progress"><span id="progTxt"></span><div id="bar"><i></i></div></div>
     </div>
   </div>
   <div id="calWrap"><div id="cal"></div></div>
@@ -356,6 +357,7 @@ function fitInfo() {
   document.getElementById("holiday").style.fontSize = gfs * 0.56 + "px";
   const pr = document.getElementById("progress"), pt = document.getElementById("progTxt");
   let pfs = gfs * 0.46; pr.style.fontSize = pfs + "px";
+  pr.style.marginTop = gfs * 0.15 + "px"; // optical: same visible gap as between the date and the Hebrew date
   const room = W - 50; if (pt.offsetWidth > room) pr.style.fontSize = pfs * room / pt.offsetWidth + "px";
 }
 
