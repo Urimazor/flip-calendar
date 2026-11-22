@@ -10,7 +10,7 @@
 :root{
   --bg:#000;color-scheme:dark;
   --ink:#E8E2E0;      /* off-white from the poster */
-  --red:#E43321;      /* Sunday red from the poster */
+  --red:#E43321;      /* weekend (Saturday) red */
   --rule:rgba(232,226,224,.42);
   --muted:#979391;
   --card:#141414;
@@ -63,23 +63,23 @@ html[dir-cal="rtl"] #bar i{inset:0 0 0 auto}
 html[dir-cal="rtl"] #cal{direction:rtl}
 html[dir-cal="ltr"] #cal{direction:ltr}
 .wd{padding:0 0 calc(var(--fs)*.38);display:flex;align-items:flex-end;justify-content:flex-start;padding-inline-start:.06em}
-.wd.sun{color:var(--red)}
+.wd.sat{color:var(--red)}
 .wd.now{color:var(--bg)}
 .wd.now span{background:var(--ink);padding:0 .14em;border-radius:.12em}
-.wd.sun.now span{background:var(--red)}
+.wd.sat.now span{background:var(--red)}
 .ml{display:flex;align-items:center;justify-content:center;border-top:1.5px solid var(--rule);font-size:calc(var(--fs)*.92)}
 .ml.cur{color:var(--bg)}
 .ml.cur span{background:var(--ink);padding:.06em .18em;border-radius:.1em}
 .row{border-top:1.5px solid var(--rule);grid-column:2 / -1}
 .d{display:flex;align-items:center;justify-content:flex-start;padding-inline-start:.06em;position:relative;z-index:1;cursor:inherit;transition:opacity .6s}
 html[dir-cal="rtl"] .d{direction:ltr;justify-content:flex-end;padding-inline-start:0;padding-right:.06em}
-.d.sun{color:var(--red)}
+.d.sat{color:var(--red)}
 .d.past{opacity:.34}
 .d.today span{color:var(--bg);background:var(--ink);border-radius:.14em;padding:.04em .1em;box-shadow:0 0 0 .08em var(--bg),0 0 .5em rgba(232,226,224,.45);animation:pulse 2.4s ease-in-out infinite}
-.d.today.sun span{background:var(--red)}
+.d.today.sat span{background:var(--red)}
 .d span{position:relative}
 .d.hol span::after{content:"";position:absolute;left:50%;top:-.2em;width:.17em;height:.17em;margin-left:-.085em;border-radius:50%;background:var(--red)}
-.d.hol.sun span::after{background:var(--ink)}
+.d.hol.sat span::after{background:var(--ink)}
 .d.today.hol span::after{top:-.32em}
 body.nohol .d.hol span::after{display:none}
 .d:hover span{outline:2px solid var(--ink);outline-offset:.06em;border-radius:.1em}
@@ -259,12 +259,12 @@ let dayCells = {}, hdrCells = [], monthLabels = [];
 function buildCalendar(year) {
   calEl.innerHTML = ""; dayCells = {}; hdrCells = []; monthLabels = [];
   const frag = document.createDocumentFragment();
-  // header row: corner + 37 weekday letters starting on Sunday (as in the poster)
+  // header row: corner + 37 weekday letters starting on Sunday (as in the poster); the red column is Saturday
   const corner = document.createElement("div"); corner.className = "corner"; corner.style.gridRow = 1; corner.style.gridColumn = 1; frag.appendChild(corner);
   attachNoteAdd(corner);
   const L = "SMTWTFS";
   for (let i = 0; i < 37; i++) {
-    const w = document.createElement("div"); w.className = "wd" + (i % 7 === 0 ? " sun" : "");
+    const w = document.createElement("div"); w.className = "wd" + (i % 7 === 6 ? " sat" : "");
     w.style.gridRow = 1; w.style.gridColumn = i + 2; w.innerHTML = "<span>" + L[i % 7] + "</span>"; frag.appendChild(w); hdrCells.push(w);
   }
   const ML = "JFMAMJJASOND";
@@ -275,7 +275,7 @@ function buildCalendar(year) {
     const first = new Date(year, m, 1).getDay(), days = new Date(year, m + 1, 0).getDate();
     for (let d = 1; d <= days; d++) {
       const col = first + d - 1, el = document.createElement("div");
-      el.className = "d" + (col % 7 === 0 ? " sun" : "");
+      el.className = "d" + (col % 7 === 6 ? " sat" : "");
       el.style.gridRow = r; el.style.gridColumn = col + 2;
       el.innerHTML = "<span>" + d + "</span>";
       el.dataset.m = m; el.dataset.d = d;
